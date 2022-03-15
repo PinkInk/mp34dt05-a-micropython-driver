@@ -7,7 +7,6 @@ from uctypes import addressof
 buf_len = 1024 # bytes
 
 # count set bits in byte ----------------------------------
-# Brian Kernighan method https://developer.arm.com/documentation/ka002486/latest
 @micropython.asm_thumb
 def bcount(r0):
     mov(r1, 0)      # r1 = set bit counter = 0
