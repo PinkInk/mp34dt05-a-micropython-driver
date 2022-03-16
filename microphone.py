@@ -69,7 +69,7 @@ clockspeed = int(3_072_000) # 3.072e6
 steps = 8 # cpu steps per sample cycle
 pdm_clk = Pin(23)
 pdm_data = Pin(22)
-sample_buf = array.array('i', [0 for _ in range(8)])
+sample_buf = array.array('I', [0 for _ in range(8)])
 
 @rp2.asm_pio(set_init=rp2.PIO.OUT_LOW, out_init=rp2.PIO.IN_LOW, fifo_join=rp2.PIO.JOIN_RX)
 def pdm():
