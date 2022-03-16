@@ -73,8 +73,8 @@ pdm_data = Pin(22)
 
 @rp2.asm_pio(set_init=rp2.PIO.OUT_LOW, out_init=rp2.PIO.IN_LOW)#, fifo_join=rp2.PIO.JOIN_RX)
 def pdm():
-    # set(y, 8)                   # no. of word length samples
-    # label("WORDSTART")
+    set(y, 8)                   # no. of word length samples
+    label("WORDSTART")
     set(x, 30)                  # bits per sample - 2
     label("SAMPLE")
     set(pins, 1)            [2] # set clock pin high
@@ -88,11 +88,13 @@ def pdm():
     in_(pins, 1)
     set(pins, 0)
     push(noblock)               # push ISR to to RX FIFO
-    # jmp(y_dec, "WORDSTART")
+    jmp(y_dec, "WORDSTART")
     irq(rel(0))                 # raise irq - consume RX FIFO in main
 
 sm = rp2.StateMachine(0, pdm, freq=clockspeed*steps, set_base=pdm_clk, in_base=pdm_data)
 # sm.irq(handler=lambda p: push(data, bcount(sm.get())))
-sm.irq(handler=lambda p: print(sm.get()))
+# sm.irq(handler=lambda p: print(sm.get()))
+c = array.array('i', [0 for _ in range(8)])
+sm.irq(handler=lambda p: sm.get(c))
 sm.active(True)
 # -----------------------------------------
