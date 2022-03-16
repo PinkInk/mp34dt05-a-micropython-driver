@@ -1,4 +1,3 @@
-
 import rp2
 import array
 from machine import Pin
@@ -63,27 +62,30 @@ def push(r0, r1):
     str(r3, [r0, 4])        # save the updated sample bit counter back to array
 # -----------------------------------------
 
-# acquire samples -------------------------
+# acquire pdm samples ---------------------
 # FIFO = 4 (or 8) words
 # 1 word = 4 bytes = 32 bits
 clockspeed = int(3_072_000) # 3.072e6
 steps = 8 # cpu steps per sample cycle
 pdm_clk = Pin(23)
 pdm_data = Pin(22)
+sample_buf = array.array('i', [0 for _ in range(8)])
 
-@rp2.asm_pio(set_init=rp2.PIO.OUT_LOW, out_init=rp2.PIO.IN_LOW)#, fifo_join=rp2.PIO.JOIN_RX)
+@rp2.asm_pio(set_init=rp2.PIO.OUT_LOW, out_init=rp2.PIO.IN_LOW, fifo_join=rp2.PIO.JOIN_RX)
 def pdm():
     set(y, 8)                   # no. of word length samples
     label("WORDSTART")
-    set(x, 30)                  # bits per sample - 2
+    set(x, 30)                  # 32 bits per sample (- 2)
     label("SAMPLE")
     set(pins, 1)            [2] # set clock pin high
     in_(pins, 1)                # sample data pin into ISR 
                                 # (>105ns after rising clock edge)
     set(pins, 0)            [2] # set clock pin low
     jmp(x_dec, "SAMPLE")        # loop
-    # last sampling 3 steps shorter to accomodate
-    # push, irq and (re-)set x loop counter 
+    # last bit sample 3 steps shorter accomodating
+    # push, jmp and (re-)set x loop counter
+    # TODO: accomodate irq & set y loop counter 
+    #       (+2 instruction per 32 bit cycle) 
     set(pins, 1)            [2]
     in_(pins, 1)
     set(pins, 0)
@@ -93,8 +95,6 @@ def pdm():
 
 sm = rp2.StateMachine(0, pdm, freq=clockspeed*steps, set_base=pdm_clk, in_base=pdm_data)
 # sm.irq(handler=lambda p: push(data, bcount(sm.get())))
-# sm.irq(handler=lambda p: print(sm.get()))
-c = array.array('i', [0 for _ in range(8)])
-sm.irq(handler=lambda p: sm.get(c))
+sm.irq(handler=lambda p: sm.get(sample_buf))
 sm.active(True)
 # -----------------------------------------
