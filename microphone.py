@@ -6,7 +6,7 @@ from uctypes import addressof
 
 buf_len = 1024 # bytes
 
-# count set bits in byte ----------------------------------
+# count set bits in word ----------------------------------
 @micropython.asm_thumb
 def bcount(r0):
     mov(r1, 0)      # r1 = set bit counter = 0
@@ -63,31 +63,36 @@ def push(r0, r1):
     str(r3, [r0, 4])        # save the updated sample bit counter back to array
 # -----------------------------------------
 
-# acquire sample --------------------------
+# acquire samples -------------------------
+# FIFO = 4 (or 8) words
+# 1 word = 4 bytes = 32 bits
 clockspeed = int(3_072_000) # 3.072e6
 steps = 8 # cpu steps per sample cycle
 pdm_clk = Pin(23)
 pdm_data = Pin(22)
 
-@rp2.asm_pio(set_init=rp2.PIO.OUT_LOW, out_init=rp2.PIO.IN_LOW)
+@rp2.asm_pio(set_init=rp2.PIO.OUT_LOW, out_init=rp2.PIO.IN_LOW)#, fifo_join=rp2.PIO.JOIN_RX)
 def pdm():
-    set(x, 6)
-    # sample 7 times
+    # set(y, 8)                   # no. of word length samples
+    # label("WORDSTART")
+    set(x, 30)                  # bits per sample - 2
     label("SAMPLE")
-    set(pins, 1)            [2]
-    in_(pins, 1)
-    set(pins, 0)            [2]
-    jmp(x_dec, "SAMPLE")
+    set(pins, 1)            [2] # set clock pin high
+    in_(pins, 1)                # sample data pin into ISR 
+                                # (>105ns after rising clock edge)
+    set(pins, 0)            [2] # set clock pin low
+    jmp(x_dec, "SAMPLE")        # loop
     # last sampling 3 steps shorter to accomodate
     # push, irq and (re-)set x loop counter 
     set(pins, 1)            [2]
     in_(pins, 1)
     set(pins, 0)
-    push(noblock)
-    irq(rel(0))
+    push(noblock)               # push ISR to to RX FIFO
+    # jmp(y_dec, "WORDSTART")
+    irq(rel(0))                 # raise irq - consume RX FIFO in main
 
 sm = rp2.StateMachine(0, pdm, freq=clockspeed*steps, set_base=pdm_clk, in_base=pdm_data)
-sm.irq(handler=lambda p: push(data, bcount(sm.get())))
+# sm.irq(handler=lambda p: push(data, bcount(sm.get())))
+sm.irq(handler=lambda p: print(sm.get()))
 sm.active(True)
 # -----------------------------------------
-
