@@ -59,45 +59,47 @@ def push(r0, r1):
 
     # sample buffer loop (SBL)
     mov(r5, 0)                  # r5 = current sample running set-bit count
-    mov(r6, 0)                  # r6 = init pointer into 8 word sample_buf
+    mov(r6, 0)                  # r6 = init index into 8 word sample_buf
     label(SBL_START)            # sample_buf loop START
     cmp(r6, 32)                 # 8 * 4 byte words = 32 bits
-    beq(SBL_END)                # end of buffer? goto: sample_buf loop END
+    beq(SBL_END)                # end of buffer? GOTO: sample_buf loop END
 
     # sample loop
     mov(r2, r0)                 # r2 = address of sample_buf
-    add(r2, r2, r6)             # add sample_buf pointer
+    add(r2, r2, r6)             # add sample_buf index
     ldr(r7, [r2, 0])            # r7 = current sample
 
     label(SL_START)             # sample loop START
-    cmp(r7, 0)
-    beq(SL_END)
-    add(r5, 1)                  # increment bit counter
-    mov(r2, r7)                 # temp copy of sample
-    sub(r2, 1)                  # subtract 1 reverses LSB
+    cmp(r7, 0)                  # if sample decremented to zero
+    beq(SL_END)                 # GOTO: Sample Loop END
+    add(r5, 1)                  # increment sample set-bit count
+    mov(r2, r7)                 # r2 = temp copy of sample
+    sub(r2, 1)                  # subtract 1 (reverses LSB)
     and_(r7, r2)                # remove LSB from sample
-    b(SL_START)
+    b(SL_START)                 # GOTO: Sample Loop START
 
     label(SL_END)               # sample loop END
     add(r6, 4)                  # increment sample counter one word
+    b(SBL_START)                # GOTO: sample_buf loop STARTs
+
     label(SBL_END)              # sample buffer loop END
 
-    # store sample bitcount (r5) into buffer[pointer] (r4)
+    # store sample set-bit count into buf[index]
     strb(r5, [r4, 0])           # buf is a Byte array
 
-    # increment pointer
+    # increment buf index
     ldr(r2, [r1, 0])            # r2 = buf_len
     add(r3, 1)                  # increment     
-    cmp(r3, r2)                 # skip pointer = buf_len, else               
-    beq(SKIP_ZERO)
-    mov(r2, 0)                  # loop to start of buffer
-    label(SKIP_ZERO)
-    str(r3, [r1, 4])            # store pointer back to array
+    cmp(r3, r2)                 # index = buf_len?               
+    beq(SKIP_RESET)             #   GOTO: SKIP_RESET
+    mov(r3, 0)                  # re-init index = 0
+    label(SKIP_RESET)
+    str(r3, [r1, 4])            # store buf index back to data
 
 
 def irq_handler(p):
     sm.get(sample_buf)
-    # push(sample_buf, data)
+    push(sample_buf, data)
 
 # init and start the statemachine
 sm = rp2.StateMachine(0, sample, freq=clockspeed*steps, set_base=pdm_clk, in_base=pdm_data)
