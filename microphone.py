@@ -87,19 +87,22 @@ def push(r0, r1):
     # store sample set-bit count into buf[index]
     strb(r5, [r4, 0])           # buf is a Byte array
 
+    # TODO: this is not incrementing buf index!
     # increment buf index
     ldr(r2, [r1, 0])            # r2 = buf_len
     add(r3, 1)                  # increment     
-    cmp(r3, r2)                 # index = buf_len?               
+    cmp(r3, r2)                 # index = buf_len?
     beq(SKIP_RESET)             #   GOTO: SKIP_RESET
     mov(r3, 0)                  # re-init index = 0
     label(SKIP_RESET)
     str(r3, [r1, 4])            # store buf index back to data
+    
+    mov(r0, r2)
 
 
 def irq_handler(p):
     sm.get(sample_buf)
-    push(sample_buf, data)
+    print(push(sample_buf, data), end=' ')
 
 # init and start the statemachine
 sm = rp2.StateMachine(0, sample, freq=clockspeed*steps, set_base=pdm_clk, in_base=pdm_data)
