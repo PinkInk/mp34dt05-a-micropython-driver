@@ -1,4 +1,3 @@
-from cProfile import label
 import rp2
 import array
 from machine import Pin
