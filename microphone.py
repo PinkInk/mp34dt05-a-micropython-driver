@@ -3,7 +3,7 @@ import array
 from machine import Pin
 from uctypes import addressof
 
-clockspeed = 3_072_000 # PDM clock frequency
+clockspeed = 3_072_000 # PDM clock frequency Hz
 steps = 8 # PIO clock steps per PDM clock cycle
 pdm_clk = Pin(23)
 pdm_data = Pin(22)
@@ -14,7 +14,7 @@ buf_len = 1024
 buf0 = array.array('B', [0 for _ in range(buf_len)])
 buf1 = array.array('B', [0 for _ in range(buf_len)])
 
-# sample buffer wrapper
+# sample buffer wrapper                     [byte offset]
 #   data[0] = buffer length                 [0]
 #   data[1] = active buffer (0 or 1)        [4]
 #   data[2] = index of current sample       [8]
@@ -47,8 +47,8 @@ def sample():
     jmp(y_dec, "WORDSTART")
     irq(rel(0))                 # raise irq - consume RX FIFO in main
 
-# count bits in 8 word sample and store in buffer
-# python variants take longer than the sampling period
+# count bits in 8 word sample and store into active buffer
+# (python variants take longer than the sampling period)
 #   r0 = sample_buf (8 word array)
 #   r1 = data array
 @micropython.asm_thumb
@@ -76,7 +76,9 @@ def push(r0, r1):
     mov(r2, r0)                 # r2 = address of sample_buf
     add(r2, r2, r6)             # add sample_buf index
     ldr(r7, [r2, 0])            # r7 = current sample
-
+    
+    # Brian Kernighan method
+    # https://developer.arm.com/documentation/ka002486/latest 
     label(SL_START)             # sample loop START
     cmp(r7, 0)                  # if sample decremented to zero
     beq(SL_END)                 # GOTO: Sample Loop END
@@ -92,7 +94,7 @@ def push(r0, r1):
 
     label(SBL_END)              # sample buffer loop END
 
-    # store sample set-bit count into buf[index]
+    # store sample set-bit count into active buf[index]
     strb(r5, [r4, 0])           # buf is a Byte array
 
     # increment and store buf index 
@@ -116,6 +118,7 @@ def push(r0, r1):
     label(SKIP_RESET)
     str(r3, [r1, 8])            # store buf index back to data
 
+# irq handler
 # get samples and store in buffer
 #   p = irq (passed by StateMachine.irq)
 def irq_handler(p):
@@ -127,12 +130,3 @@ sm = rp2.StateMachine(0, sample, freq=clockspeed*steps, set_base=pdm_clk, in_bas
 # hard interupt flag causes lockup?
 sm.irq(handler=irq_handler) #, hard=True)
 sm.active(True)
-
-# # timing test
-# import time
-# time.sleep(1) # wait for statemachine to initialise
-# st = time.ticks_us()
-# sp = data[2]
-# while data[2] != sp: 
-#     pass
-# f'{time.ticks_diff(time.ticks_us(), st)/1e6:.4f} seconds'
