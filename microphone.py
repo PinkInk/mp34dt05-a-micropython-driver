@@ -1,93 +1,119 @@
-
 import rp2
 import array
 from machine import Pin
 from uctypes import addressof
 
-buf_len = 1024 # bytes
-
-# count set bits in byte ----------------------------------
-@micropython.asm_thumb
-def bcount(r0):
-    mov(r1, 0)      # r1 = set bit counter = 0
-    label(LOOP)
-    cmp(r0, 0)      # value is, or is decremented to, 0?
-    beq(END)        # goto END if it EQuals 0
-    add(r1, 1)      # increment bit count
-    mov(r2, r0)     # temp copy of value
-    sub(r2, 1)      # subtracting 1 reverses LSB
-    and_(r0, r2)    # remove LSB from value
-    b(LOOP)         # goto LOOP
-    label(END)
-    mov(r0, r1)     # return count as r0
-# ---------------------------------------------------------
-
-# decimate sample and store to buffer ---------------------
-# 32 bytes of pdm data into 1 sample byte
-# 
-# data[0] = buffer length
-# data[1] = sample bit counter (in bytes i.e. /8)
-# data[2] = pointer
-# data[3] = pointer to buffer
-buf = bytearray(buf_len)
-data = array.array('i', [buf_len, 32, 0, addressof(buf)])
-
-# r0 = data array
-# r1 = sample bits
-@micropython.asm_thumb
-def push(r0, r1):
-    ldr(r2, [r0, 0])        # r2 = buf_len
-    ldr(r3, [r0, 4])        # r3 = sample bit counter
-    ldr(r4, [r0, 8])        # r4 = sample pointer
-    ldr(r5, [r0, 12])       # r5 = start of buffer
-    add(r5, r5, r4)         # offset r5 by sample pointer
-    cmp(r3, 32)
-    bne(NOCLEARSAMPLE)      # if this is a new sample slot
-    mov(r6, 0)
-    strb(r6, [r5, 0])       # zero it, in case this is an overwrite
-    label(NOCLEARSAMPLE)
-    ldrb(r6, [r5, 0])       # load the buffer value from pointer address into r6
-    add(r6, r6, r1)         # add new sample bits (r1) to current sample
-    strb(r6, [r5, 0])       # store the new value back into the buffer
-    sub(r3, 1)              # decrement sample bit counter
-    cmp(r3, 0)          
-    bne(BIT_COUNTER)        # if zero
-    add(r4, r4, 1)          # increment sample pointer
-    cmp(r4, r2)
-    blt(SAMPLE_POINTER)     # if sample pointer = buffer length 
-    mov(r4, 0)              # reset sample pointer to beginning of buffer
-    label(SAMPLE_POINTER)
-    str(r4, [r0, 8])        # save the updated sample pointer back to array
-    mov(r3, 32)             # reset sample bit counter
-    label(BIT_COUNTER)
-    str(r3, [r0, 4])        # save the updated sample bit counter back to array
-# -----------------------------------------
-
-# acquire sample --------------------------
-clockspeed = int(3_072_000) # 3.072e6
-steps = 8 # cpu steps per sample cycle
+clockspeed = 3_072_000 # PDM clock frequency
+steps = 8 # PIO clock steps per PDM clock cycle
 pdm_clk = Pin(23)
 pdm_data = Pin(22)
+sample_buf = array.array('I', [0 for _ in range(8)])
 
-@rp2.asm_pio(set_init=rp2.PIO.OUT_LOW, out_init=rp2.PIO.IN_LOW)
-def pdm():
-    set(x, 6)
-    # sample 7 times
+# sample buffer
+buf_len = 1024
+buf = array.array('B', [0 for _ in range(buf_len)])
+
+# sample buffer wrapper
+#   data[0] = buffer length
+#   data[1] = index of current sample
+#   data[2] = address of start of buffer
+data = array.array('I', [buf_len, 0, addressof(buf)] )
+
+# sample PDM microphone using PIO
+@rp2.asm_pio(set_init=rp2.PIO.OUT_LOW, out_init=rp2.PIO.IN_LOW, fifo_join=rp2.PIO.JOIN_RX)
+def sample():
+    set(y, 8)                   # no. of word length samples
+    label("WORDSTART")
+    set(x, 30)                  # 32 bits per sample (- 2)
     label("SAMPLE")
-    set(pins, 1)            [2]
-    in_(pins, 1)
-    set(pins, 0)            [2]
-    jmp(x_dec, "SAMPLE")
-    # last sampling 3 steps shorter to accomodate
-    # push, irq and (re-)set x loop counter 
+    set(pins, 1)            [2] # set clock pin high
+    in_(pins, 1)                # sample data pin into ISR 
+                                # (>105ns after rising clock edge)
+    set(pins, 0)            [2] # set clock pin low
+    jmp(x_dec, "SAMPLE")        # loop
+    # last bit sample 3 steps shorter accomodating
+    # push, jmp and (re-)set x loop counter
+    # TODO: accomodate irq & set y loop counter 
+    #       (+2 instruction per 32 bit cycle) 
     set(pins, 1)            [2]
     in_(pins, 1)
     set(pins, 0)
-    push(noblock)
-    irq(rel(0))
+    push(noblock)               # push ISR to to RX FIFO
 
-sm = rp2.StateMachine(0, pdm, freq=clockspeed*steps, set_base=pdm_clk, in_base=pdm_data)
-sm.irq(handler=lambda p: push(data, bcount(sm.get())))
+    jmp(y_dec, "WORDSTART")
+    irq(rel(0))                 # raise irq - consume RX FIFO in main
+
+# count bits in 8 word sample and store in buffer
+# python variants take longer than the sampling period
+#   r0 = sample_buf (8 word array)
+#   r1 = data array
+@micropython.asm_thumb
+def push(r0, r1):
+    # r2 = overloaded scratch variable
+
+    # init
+    ldr(r3, [r1, 4])            # r3 = get buf index (data[1])
+    ldr(r4, [r1, 8])            # r4 = address of start of buffer (data[2])
+    add(r4, r4, r3)             # add buf index
+
+    # sample buffer loop (SBL)
+    mov(r5, 0)                  # r5 = current sample running set-bit count
+    mov(r6, 0)                  # r6 = init index into 8 word sample_buf
+    label(SBL_START)            # sample_buf loop START
+    cmp(r6, 32)                 # 8 * 4 byte words = 32 bits
+    beq(SBL_END)                # end of buffer? GOTO: sample_buf loop END
+
+    # sample loop
+    mov(r2, r0)                 # r2 = address of sample_buf
+    add(r2, r2, r6)             # add sample_buf index
+    ldr(r7, [r2, 0])            # r7 = current sample
+
+    label(SL_START)             # sample loop START
+    cmp(r7, 0)                  # if sample decremented to zero
+    beq(SL_END)                 # GOTO: Sample Loop END
+    add(r5, 1)                  # increment sample set-bit count
+    mov(r2, r7)                 # r2 = temp copy of sample
+    sub(r2, 1)                  # subtract 1 (reverses LSB)
+    and_(r7, r2)                # remove LSB from sample
+    b(SL_START)                 # GOTO: Sample Loop START
+
+    label(SL_END)               # sample loop END
+    add(r6, 4)                  # increment sample counter one word
+    b(SBL_START)                # GOTO: sample_buf loop STARTs
+
+    label(SBL_END)              # sample buffer loop END
+
+    # store sample set-bit count into buf[index]
+    strb(r5, [r4, 0])           # buf is a Byte array
+
+    # increment and store buf index
+    ldr(r2, [r1, 0])            # r2 = buf_len
+    add(r3, 1)                  # increment     
+    cmp(r3, r2)                 # index = buf_len?
+    bne(SKIP_RESET)             #   GOTO: SKIP_RESET
+    mov(r3, 0)                  # re-init index = 0
+    label(SKIP_RESET)
+    str(r3, [r1, 4])            # store buf index back to data
+    
+    mov(r0, r2)
+
+# get samples and store in buffer
+#   p = irq (passed by StateMachine.irq)
+def irq_handler(p):
+    sm.get(sample_buf)
+    push(sample_buf, data)
+
+# init and start the statemachine
+sm = rp2.StateMachine(0, sample, freq=clockspeed*steps, set_base=pdm_clk, in_base=pdm_data)
+# hard interupt flag causes lockup?
+sm.irq(handler=irq_handler) #, hard=True)
 sm.active(True)
-# -----------------------------------------
 
+# # timing test
+# import time
+# # time.sleep(1) # wait for statemachine to initialise
+# st = time.ticks_us()
+# sp = data[1]
+# while data[1] != sp: 
+#     pass
+# f'{time.ticks_diff(time.ticks_us(), st)/1e6:.4f} seconds'
