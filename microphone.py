@@ -15,11 +15,11 @@ buf0 = array.array('B', [0 for _ in range(buf_len)])
 buf1 = array.array('B', [0 for _ in range(buf_len)])
 
 # sample buffer wrapper
-#   data[0] = buffer length
-#   data[1] = active buffer (0 or 1)
-#   data[2] = index of current sample
-#   data[3] = address of start of buffer 0
-#   data[4] = address of start of buffer 1
+#   data[0] = buffer length                 [0]
+#   data[1] = active buffer (0 or 1)        [4]
+#   data[2] = index of current sample       [8]
+#   data[3] = address of start of buffer 0  [12]
+#   data[4] = address of start of buffer 1  [16]
 # 
 data = array.array('I', [buf_len, 0, 0, addressof(buf0), addressof(buf1)] )
 
@@ -105,14 +105,15 @@ def push(r0, r1):
     # swap buffers
     ldr(r2, [r1, 4])            # r2 = get active buffer (to invert)
     cmp(r2, 0)
-    beq(UPD_BUF1)               # if buffer 0 is not active
+    beq(BUF1)                   # if buffer 0 is not active
     mov(r2, 0)                  #   make buffer 0 active
-    b(SKIP_RESET)
-    label(UPD_BUF1)
+    b(UPD_BUF)
+    label(BUF1)
     mov(r2, 1)                  #   else: make buffer 1 active
+    label(UPD_BUF)
+    str(r2, [r1, 4])            # store active buffer
 
     label(SKIP_RESET)
-    str(r2, [r1, 4])            # store active buffer
     str(r3, [r1, 8])            # store buf index back to data
 
 # get samples and store in buffer
@@ -129,9 +130,9 @@ sm.active(True)
 
 # # timing test
 # import time
-# # time.sleep(1) # wait for statemachine to initialise
+# time.sleep(1) # wait for statemachine to initialise
 # st = time.ticks_us()
-# sp = data[1]
-# while data[1] != sp: 
+# sp = data[2]
+# while data[2] != sp: 
 #     pass
 # f'{time.ticks_diff(time.ticks_us(), st)/1e6:.4f} seconds'
