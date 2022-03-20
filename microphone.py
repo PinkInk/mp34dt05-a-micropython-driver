@@ -131,8 +131,9 @@ def irq_handler(p):
     push(sample_buf, data)
     # has active buffer switched?
     if active_buf != data[1]:
-        active_buf = data[1]
+        # handle (now) inactive buffer
         micropython.schedule(buffer_handler, active_buf)
+        active_buf = data[1]
 
 # buffer handler
 def buffer_handler(active):
