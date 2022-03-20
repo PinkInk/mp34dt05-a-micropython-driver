@@ -2,6 +2,7 @@ import rp2
 import array
 from machine import Pin
 from uctypes import addressof
+import micropython
 
 clockspeed = 3_072_000 # PDM clock frequency Hz
 steps = 8 # PIO clock steps per PDM clock cycle
@@ -20,21 +21,23 @@ buf1 = array.array('B', [0 for _ in range(buf_len)])
 #   data[2] = index of current sample       [8]
 #   data[3] = address of start of buffer 0  [12]
 #   data[4] = address of start of buffer 1  [16]
-# 
 data = array.array('I', [buf_len, 0, 0, addressof(buf0), addressof(buf1)] )
 
 # sample PDM microphone using PIO
 @rp2.asm_pio(set_init=rp2.PIO.OUT_LOW, out_init=rp2.PIO.IN_LOW, fifo_join=rp2.PIO.JOIN_RX)
 def sample():
     set(y, 8)                   # no. of word length samples
+
     label("WORDSTART")
     set(x, 30)                  # 32 bits per sample (- 2)
+    
     label("SAMPLE")
     set(pins, 1)            [2] # set clock pin high
     in_(pins, 1)                # sample data pin into ISR 
                                 # (>105ns after rising clock edge)
     set(pins, 0)            [2] # set clock pin low
     jmp(x_dec, "SAMPLE")        # loop
+    
     # last bit sample 3 steps shorter accomodating
     # push, jmp and (re-)set x loop counter
     # TODO: accomodate irq & set y loop counter 
@@ -121,9 +124,19 @@ def push(r0, r1):
 # irq handler
 # get samples and store in buffer
 #   p = irq (passed by StateMachine.irq)
+active_buf = 0
 def irq_handler(p):
+    global active_buf
     sm.get(sample_buf)
     push(sample_buf, data)
+    # has active buffer switched?
+    if active_buf != data[1]:
+        active_buf = data[1]
+        micropython.schedule(buffer_handler, active_buf)
+
+# buffer handler
+def buffer_handler(active):
+    pass
 
 # init and start the statemachine
 sm = rp2.StateMachine(0, sample, freq=clockspeed*steps, set_base=pdm_clk, in_base=pdm_data)
