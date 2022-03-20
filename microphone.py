@@ -8,6 +8,8 @@ clockspeed = 3_072_000 # PDM clock frequency Hz
 steps = 8 # PIO clock steps per PDM clock cycle
 pdm_clk = Pin(23)
 pdm_data = Pin(22)
+
+# 8 word raw sample buffer matching size joined RX FIFO
 sample_buf = array.array('I', [0 for _ in range(8)])
 
 # sample buffer
@@ -22,6 +24,9 @@ buf1 = array.array('B', [0 for _ in range(buf_len)])
 #   data[3] = address of start of buffer 0  [12]
 #   data[4] = address of start of buffer 1  [16]
 data = array.array('I', [buf_len, 0, 0, addressof(buf0), addressof(buf1)] )
+
+# tracks current/last active buffer
+active_buf = 0
 
 # sample PDM microphone using PIO
 @rp2.asm_pio(set_init=rp2.PIO.OUT_LOW, out_init=rp2.PIO.IN_LOW, fifo_join=rp2.PIO.JOIN_RX)
@@ -122,9 +127,8 @@ def push(r0, r1):
     str(r3, [r1, 8])            # store buf index back to data
 
 # irq handler
-# get samples and store in buffer
+#   get samples and store in buffer
 #   p = irq (passed by StateMachine.irq)
-active_buf = 0
 def irq_handler(p):
     global active_buf
     sm.get(sample_buf)
@@ -136,7 +140,8 @@ def irq_handler(p):
         active_buf = data[1]
 
 # buffer handler
-def buffer_handler(active):
+#   called with inactive buffer after switch
+def buffer_handler(inactive_buf):
     pass
 
 # init and start the statemachine
