@@ -3,6 +3,8 @@ import array
 from machine import Pin
 from uctypes import addressof
 import micropython
+from wav import wav
+import os
 
 clockspeed = 3_072_000 # PDM clock frequency Hz
 steps = 8 # PIO clock steps per PDM clock cycle
@@ -139,10 +141,19 @@ def irq_handler(p):
         micropython.schedule(buffer_handler, active_buf)
         active_buf = data[1]
 
-# buffer handler
-#   called with inactive buffer after switch
+filename = 'output.wav'
+os.remove(filename)
+w = wav(filename, SampleRate=3_072_000//256) # 12Hz, 8 bits, mono
+i = 0
+num_samples = 40
 def buffer_handler(inactive_buf):
-    pass
+    global w, i, num_samples
+    if i < num_samples:
+        data = eval(f'buf{inactive_buf}')
+        w.append_buffer(data)
+        i += 1
+    elif i == num_samples:
+        w.write(overwrite=True)
 
 # init and start the statemachine
 sm = rp2.StateMachine(0, sample, freq=clockspeed*steps, set_base=pdm_clk, in_base=pdm_data)
