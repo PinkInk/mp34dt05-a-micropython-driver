@@ -62,7 +62,7 @@ def sample():
 #   r0 = sample_buf (8 word array)
 #   r1 = data array
 @micropython.asm_thumb
-def push(r0, r1):
+def store_pcm_sample(r0, r1):
     # r2 = overloaded scratch variable
 
     # init
@@ -134,25 +134,28 @@ def push(r0, r1):
 def irq_handler(p):
     global active_buf
     sm.get(sample_buf)
-    push(sample_buf, data)
+    store_pcm_sample(sample_buf, data)
     # has active buffer switched?
     if active_buf != data[1]:
         # handle (now) inactive buffer
         micropython.schedule(buffer_handler, active_buf)
         active_buf = data[1]
 
-filename = 'output.wav'
-os.remove(filename)
-w = wav(filename, SampleRate=3_072_000//256) # 12Hz, 8 bits, mono
-i = 0
-num_samples = 40
+# write samples out to wav file
+f = 'output.wav'
+i = 0 # sample counter
+c = 50
+try:
+    os.remove(f)
+except:
+    pass
+w = wav(f, SampleRate=3_072_000//256) # 12Hz, 8 bits, mono
 def buffer_handler(inactive_buf):
-    global w, i, num_samples
-    if i < num_samples:
-        data = eval(f'buf{inactive_buf}')
-        w.append_buffer(data)
+    global i, c
+    if i < c:
+        w.data += eval(f'buf{inactive_buf}')
         i += 1
-    elif i == num_samples:
+    elif i == c:
         w.write(overwrite=True)
 
 # init and start the statemachine
