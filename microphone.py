@@ -6,7 +6,7 @@ import micropython
 from wav import wav
 import os
 
-clockspeed = 3_072_000 # PDM clock frequency Hz
+bit_sample_freq = 3_072_000 # PDM clock frequency Hz
 steps = 8 # PIO clock steps per PDM clock cycle
 pdm_clk = Pin(23)
 pdm_data = Pin(22)
@@ -149,7 +149,7 @@ try:
     os.remove(f)
 except:
     pass
-w = wav(f, SampleRate=3_072_000//256) # 12Hz, 8 bits, mono
+w = wav(f, SampleRate=bit_sample_freq//256) # 3_072_000 Hz = 12Hz, 8 bits, mono
 def buffer_handler(inactive_buf):
     global i, c
     if i < c:
@@ -159,7 +159,7 @@ def buffer_handler(inactive_buf):
         w.write(overwrite=True)
 
 # init and start the statemachine
-sm = rp2.StateMachine(0, sample, freq=clockspeed*steps, set_base=pdm_clk, in_base=pdm_data)
+sm = rp2.StateMachine(0, sample, freq=bit_sample_freq*steps, set_base=pdm_clk, in_base=pdm_data)
 # hard interupt flag causes lockup?
 sm.irq(handler=irq_handler) #, hard=True)
 sm.active(True)
