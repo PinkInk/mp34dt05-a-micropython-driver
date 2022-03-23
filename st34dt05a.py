@@ -139,26 +139,10 @@ def irq_handler(p):
         micropython.schedule(buffer_handler, active_buf)
         active_buf = data[1]
 
-# write samples out to wav file
-f = 'output.wav'
-from wavsimple import wav
-w = wav('output.wav')
-record_flag = False
-
-def buffer_handler(inactive_buf):
-    global record_flag
-    if record_flag:
-        w.write(eval(f'buf{inactive_buf}'))
-
-# init and start the statemachine
+# init the statemachine
 sm = rp2.StateMachine(0, sample, freq=bit_sample_freq*steps, set_base=pdm_clk, in_base=pdm_data)
+
+# schedule interupt handler
 # hard interupt flag causes lockup?
 sm.irq(handler=irq_handler) #, hard=True)
-sm.active(True)
 
-from time import sleep
-sleep(1)
-record_flag = True
-sleep(10) # record 10 seconds of audio
-record_flag = False
-w.close()
