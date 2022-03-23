@@ -30,7 +30,7 @@ active_buf = 0
 
 # sample PDM microphone using PIO
 @rp2.asm_pio(set_init=rp2.PIO.OUT_LOW, out_init=rp2.PIO.IN_LOW, fifo_join=rp2.PIO.JOIN_RX)
-def sample():
+def sample() -> uint:
     set(y, 8)                   # no. of word length samples
 
     label("WORDSTART")
@@ -60,7 +60,7 @@ def sample():
 #   r0 = sample_buf (8 word array)
 #   r1 = data array
 @micropython.asm_thumb
-def store_pcm_sample(r0, r1):
+def store_pcm_sample(r0, r1) -> uint:
     # r2 = overloaded scratch variable
 
     # init
