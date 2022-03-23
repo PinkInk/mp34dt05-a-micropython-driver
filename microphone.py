@@ -3,8 +3,8 @@ import array
 from machine import Pin
 from uctypes import addressof
 import micropython
-from wav import wav
-import os
+# from wav import wav
+# import os
 
 bit_sample_freq = 3_072_000 # PDM clock frequency Hz
 steps = 8 # PIO clock steps per PDM clock cycle
@@ -143,23 +143,24 @@ def irq_handler(p):
 
 # write samples out to wav file
 f = 'output.wav'
-i = 0 # sample counter
-c = 50
-try:
-    os.remove(f)
-except:
-    pass
-w = wav(f, SampleRate=bit_sample_freq//256) # 3_072_000 Hz = 12Hz, 8 bits, mono
+from wavsimple import wav
+w = wav('output.wav')
+record_flag = False
+
 def buffer_handler(inactive_buf):
-    global i, c
-    if i < c:
-        w.data += eval(f'buf{inactive_buf}')
-        i += 1
-    elif i == c:
-        w.write(overwrite=True)
+    global record_flag
+    if record_flag:
+        w.write(eval(f'buf{inactive_buf}'))
 
 # init and start the statemachine
 sm = rp2.StateMachine(0, sample, freq=bit_sample_freq*steps, set_base=pdm_clk, in_base=pdm_data)
 # hard interupt flag causes lockup?
 sm.irq(handler=irq_handler) #, hard=True)
 sm.active(True)
+
+from time import sleep
+sleep(1)
+record_flag = True
+sleep(10) # record 10 seconds of audio
+record_flag = False
+w.close()

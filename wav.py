@@ -44,10 +44,10 @@ class wav:
             self.AudioFormat = 1 # PCM
             self.NumChannels = NumChannels
             self.SampleRate = SampleRate
-            self.BlockAlign = NumChannels * int(BitsPerSample/8)
+            self.BlockAlign = NumChannels * (BitsPerSample//8)
             self.BitsPerSample = BitsPerSample
             self.data = bytes(NumSamples * self.BlockAlign)
-        self.__sample_mask = {1:'B',2:'H',4:'I',8:'Q'}[int(self.BitsPerSample/8)]
+        self.__sample_mask = {1:'B',2:'H',4:'I',8:'Q'}[self.BitsPerSample//8]
         self.__sample_mask = self.__sample_mask * self.NumChannels
 
     def SubChunk2Size(self):
@@ -113,7 +113,7 @@ class wav:
       
     def __len__(self):
         """Return length, number of frames"""
-        return int(len(self.data)/self.BlockAlign)
+        return len(self.data)//self.BlockAlign
           
     def __iter__(self):
         """Iterate over frames, as tuples of len NumChannels"""
@@ -143,7 +143,7 @@ class wav:
             for indx,sample in enumerate(other):
                 if not type(sample) == int: 
                     raise TypeError('discrete sample must be type int')
-                if sample >= 256**int(self.BitsPerSample/8): 
+                if sample >= 256**(self.BitsPerSample//8): 
                     raise ValueError('sample[{}]=({}), > max. sample size({})'.format(indx,sample,(256**self.BytesPerSample)-1))
                 if sample < 0: 
                     raise ValueError('sample[{}]={}, < zero'.format(indx,sample))
