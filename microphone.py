@@ -3,8 +3,6 @@ import array
 from machine import Pin
 from uctypes import addressof
 import micropython
-# from wav import wav
-# import os
 
 bit_sample_freq = 3_072_000 # PDM clock frequency Hz
 steps = 8 # PIO clock steps per PDM clock cycle
