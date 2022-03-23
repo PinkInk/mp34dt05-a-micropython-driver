@@ -28,6 +28,9 @@ data = array.array('I', [buf_len, 0, 0, addressof(buf0), addressof(buf1)] )
 # tracks current/last active buffer
 active_buf = 0
 
+# placeholder for user provided buffer handler fn
+buffer_handler = None
+
 # sample PDM microphone using PIO
 @rp2.asm_pio(set_init=rp2.PIO.OUT_LOW, out_init=rp2.PIO.IN_LOW, fifo_join=rp2.PIO.JOIN_RX)
 def sample() -> uint:
@@ -135,8 +138,9 @@ def irq_handler(p):
     store_pcm_sample(sample_buf, data)
     # has active buffer switched?
     if active_buf != data[1]:
-        # handle (now) inactive buffer
-        micropython.schedule(buffer_handler, active_buf)
+        if buffer_handler:
+            # handle (now) inactive buffer
+            micropython.schedule(buffer_handler, active_buf)
         active_buf = data[1]
 
 # init the statemachine
