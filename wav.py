@@ -7,7 +7,7 @@ class wav:
     ChunkID         = b'RIFF'
     Format          = b'WAVE'
     SubChunk1ID     = b'fmt '
-    SubChunk1Size   = 16 # for PCM
+    SubChunk1Size   = 16 # for PCM - size of chunk, not sample
     SubChunk2ID     = b'data'
     __header_smask  = '4sL4s4sLHHLLHH4sL'
     __header_slist  = ['4s','L','4s','4s','L','H','H','L','L','H','H','4s','L']
