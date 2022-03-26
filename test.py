@@ -13,7 +13,6 @@ record_flag = False
 def buffer_handler(inactive_buf):
     global record_flag
     if record_flag:
-
         w.write(pdm.get_buffer(inactive_buf))
 
 pdm.start(pdm_clk, pdm_data, handler=buffer_handler)
