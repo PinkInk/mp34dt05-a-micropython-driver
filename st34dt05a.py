@@ -23,7 +23,7 @@ __buf1 = array.array('B', [0 for _ in range(buf_len)])
 __data = array.array('I', [buf_len, 0, 0, addressof(__buf0), addressof(__buf1)] )
 
 # tracks current/last active buffer
-active_buf = 0
+__active_buf = 0
 
 # placeholder for user provided buffer handler fn
 buffer_handler = None
@@ -130,15 +130,15 @@ def store_pcm_sample(r0, r1) -> uint:
 #   get samples and store in buffer
 #   p = irq (passed by StateMachine.irq)
 def irq_handler(p):
-    global active_buf
+    global __active_buf
     sm.get(__raw_sample_buf)
     store_pcm_sample(__raw_sample_buf, __data)
     # has active buffer switched?
-    if active_buf != __data[1]:
+    if __active_buf != __data[1]:
         if buffer_handler:
             # handle (now) inactive buffer
-            micropython.schedule(buffer_handler, active_buf)
-        active_buf = __data[1]
+            micropython.schedule(buffer_handler, __active_buf)
+        __active_buf = __data[1]
 
 # return buffer
 def get_buffer(b):
