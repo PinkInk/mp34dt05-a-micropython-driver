@@ -1,29 +1,26 @@
 import rp2
 import array
-from machine import Pin
 from uctypes import addressof
 import micropython
 
 bit_sample_freq = 3_072_000 # PDM clock frequency Hz
 steps = 8 # PIO clock steps per PDM clock cycle
-pdm_clk = Pin(23)
-pdm_data = Pin(22)
 
 # 8 word raw sample buffer matching size joined RX FIFO
-sample_buf = array.array('I', [0 for _ in range(8)])
+__raw_sample_buf = array.array('I', [0 for _ in range(8)])
 
-# sample buffer
+# sample buffers
 buf_len = 1024
-buf0 = array.array('B', [0 for _ in range(buf_len)])
-buf1 = array.array('B', [0 for _ in range(buf_len)])
+__buf0 = array.array('B', [0 for _ in range(buf_len)])
+__buf1 = array.array('B', [0 for _ in range(buf_len)])
 
 # sample buffer wrapper                     [byte offset]
-#   data[0] = buffer length                 [0]
-#   data[1] = active buffer (0 or 1)        [4]
-#   data[2] = index of current sample       [8]
-#   data[3] = address of start of buffer 0  [12]
-#   data[4] = address of start of buffer 1  [16]
-data = array.array('I', [buf_len, 0, 0, addressof(buf0), addressof(buf1)] )
+#   __data[0] = buffer length                 [0]
+#   __data[1] = active buffer (0 or 1)        [4]
+#   __data[2] = index of current sample       [8]
+#   __data[3] = address of start of buffer 0  [12]
+#   __data[4] = address of start of buffer 1  [16]
+__data = array.array('I', [buf_len, 0, 0, addressof(__buf0), addressof(__buf1)] )
 
 # tracks current/last active buffer
 active_buf = 0
@@ -60,32 +57,32 @@ def sample() -> uint:
 
 # count bits in 8 word sample and store into active buffer
 # (python variants take longer than the sampling period)
-#   r0 = sample_buf (8 word array)
-#   r1 = data array
+#   r0 = __raw_sample_buf (8 word array)
+#   r1 = __data array
 @micropython.asm_thumb
 def store_pcm_sample(r0, r1) -> uint:
     # r2 = overloaded scratch variable
 
     # init
-    ldr(r4, [r1, 12])           # r4 = address of start of buffer 0 (data[3])
-    ldr(r2, [r1, 4])            # r2 = get active buffer (data[1])
-    cmp(r2, 0)                  # if buf0 active
+    ldr(r4, [r1, 12])           # r4 = address of start of buffer 0 (__data[3])
+    ldr(r2, [r1, 4])            # r2 = get active buffer (__data[1])
+    cmp(r2, 0)                  # if __buf0 active
     beq(BUF0)                   #   skip
-    ldr(r4, [r1, 16])           #   else: r4 = address of start of buffer 1 (data[4])
+    ldr(r4, [r1, 16])           #   else: r4 = address of start of buffer 1 (__data[4])
     label(BUF0)
-    ldr(r3, [r1, 8])            # r3 = get index (data[2])
+    ldr(r3, [r1, 8])            # r3 = get index (__data[2])
     add(r4, r4, r3)             # add buf index
 
     # sample buffer loop (SBL)
     mov(r5, 0)                  # r5 = current sample running set-bit count
-    mov(r6, 0)                  # r6 = init index into 8 word sample_buf
-    label(SBL_START)            # sample_buf loop START
+    mov(r6, 0)                  # r6 = init index into 8 word __raw_sample_buf
+    label(SBL_START)            # __raw_sample_buf loop START
     cmp(r6, 32)                 # 8 * 4 byte words = 32 bits
-    beq(SBL_END)                # end of buffer? GOTO: sample_buf loop END
+    beq(SBL_END)                # end of buffer? GOTO: __raw_sample_buf loop END
 
     # sample loop
-    mov(r2, r0)                 # r2 = address of sample_buf
-    add(r2, r2, r6)             # add sample_buf index
+    mov(r2, r0)                 # r2 = address of __raw_sample_buf
+    add(r2, r2, r6)             # add __raw_sample_buf index
     ldr(r7, [r2, 0])            # r7 = current sample
     
     # Brian Kernighan method
@@ -101,7 +98,7 @@ def store_pcm_sample(r0, r1) -> uint:
 
     label(SL_END)               # sample loop END
     add(r6, 4)                  # increment sample counter one word
-    b(SBL_START)                # GOTO: sample_buf loop STARTs
+    b(SBL_START)                # GOTO: __raw_sample_buf loop STARTs
 
     label(SBL_END)              # sample buffer loop END
 
@@ -127,26 +124,40 @@ def store_pcm_sample(r0, r1) -> uint:
     str(r2, [r1, 4])            # store active buffer
 
     label(SKIP_RESET)
-    str(r3, [r1, 8])            # store buf index back to data
+    str(r3, [r1, 8])            # store buf index back to __data
 
 # irq handler
 #   get samples and store in buffer
 #   p = irq (passed by StateMachine.irq)
 def irq_handler(p):
     global active_buf
-    sm.get(sample_buf)
-    store_pcm_sample(sample_buf, data)
+    sm.get(__raw_sample_buf)
+    store_pcm_sample(__raw_sample_buf, __data)
     # has active buffer switched?
-    if active_buf != data[1]:
+    if active_buf != __data[1]:
         if buffer_handler:
             # handle (now) inactive buffer
             micropython.schedule(buffer_handler, active_buf)
-        active_buf = data[1]
+        active_buf = __data[1]
 
-# init the statemachine
-sm = rp2.StateMachine(0, sample, freq=bit_sample_freq*steps, set_base=pdm_clk, in_base=pdm_data)
+# return buffer
+def get_buffer(b):
+    return eval(f'__buf{b}')
 
-# schedule interupt handler
-# hard interupt flag causes lockup?
-sm.irq(handler=irq_handler) #, hard=True)
+# start StateMachine
+#   pdm_clk = pdm clock pin (23 on arduino nano rp2040 connect)
+#   pdm_data = pdm data pin (22 on arduino nano rp2040 connect)
+#   handler = function to handle inactive buffer
+def start(pdm_clk, pdm_data, handler=None):
+    global buffer_handler, irq_handler, sm
 
+    buffer_handler = handler
+
+    # init the statemachine
+    sm = rp2.StateMachine(0, sample, freq=bit_sample_freq*steps, set_base=pdm_clk, in_base=pdm_data)
+
+    # schedule interupt handler
+    # hard interupt flag causes lockup?
+    sm.irq(handler=irq_handler) #, hard=True)
+
+    sm.active(True)
