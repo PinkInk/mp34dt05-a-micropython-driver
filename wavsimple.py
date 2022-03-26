@@ -22,7 +22,7 @@ class wav:
     # Silently overwrite existing file
     # SampleRate, BitsPerSample, NumChannels must be ints
     # BitsPerSample%8 must = 0
-    def __init__(self, filename, SampleRate=12000, BitsPerSample=8):
+    def __init__(self, filename, SampleRate=12_000, BitsPerSample=8):
         """Create a new wav file with no samples"""
         self.filename = filename
         self.SampleRate = SampleRate

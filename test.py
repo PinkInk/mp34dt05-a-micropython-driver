@@ -3,11 +3,13 @@ from wavsimple import wav
 from machine import Pin
 import st34dt05a as pdm
 
+pdm.bit_sample_freq = 8_000 * 256 # 2_048_000 = results in 8kB/s audio
+
 pdm_clk = Pin(23)
 pdm_data = Pin(22)
 
 # wav file
-w = wav('output.wav')
+w = wav('output.wav', SampleRate=8_000)
 record_flag = False
 
 def buffer_handler(inactive_buf):
