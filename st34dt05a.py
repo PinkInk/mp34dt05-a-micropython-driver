@@ -4,7 +4,7 @@ from uctypes import addressof
 import micropython
 
 bit_sample_freq = 3_072_000 # PDM clock frequency Hz
-steps = 8 # PIO clock steps per PDM clock cycle
+__steps = 8 # PIO clock steps per PDM clock cycle
 
 # 8 word raw sample buffer matching size joined RX FIFO
 __raw_sample_buf = array.array('I', [0 for _ in range(8)])
@@ -154,7 +154,7 @@ def start(pdm_clk, pdm_data, handler=None):
     buffer_handler = handler
 
     # init the statemachine
-    sm = rp2.StateMachine(0, sample, freq=bit_sample_freq*steps, set_base=pdm_clk, in_base=pdm_data)
+    sm = rp2.StateMachine(0, sample, freq=bit_sample_freq*__steps, set_base=pdm_clk, in_base=pdm_data)
 
     # schedule interupt handler
     # hard interupt flag causes lockup?
