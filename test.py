@@ -4,6 +4,7 @@ from machine import Pin
 import st34dt05a as pdm
 
 pcm_rate = 8_000 # Hz
+# pcm_rate = 12_000 # Hz
 pdm.bit_sample_freq = pcm_rate * 256
 
 pdm_clk = Pin(23)
@@ -29,7 +30,7 @@ sleep(10)
 record_flag = False
 print('finished')
 
-pdm.stop()
+# sleep(2) # wait for soft interupt queue to clear?
 
 print('writing ... ', end='')
 w.close()

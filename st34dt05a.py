@@ -161,9 +161,7 @@ def init(pdm_clk, pdm_data, handler=None):
     sm.irq(handler=irq_handler) #, hard=True)
 
 def start():
-    global sm
     sm.active(True)
 
 def stop():
-    global sm
     sm.active(False)
