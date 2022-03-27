@@ -11,6 +11,8 @@ __raw_sample_buf = array.array('I', [0 for _ in range(8)])
 
 # sample buffers
 buf_len = 1024
+
+# initialise buffers
 __buf0 = array.array('B', [0 for _ in range(buf_len)])
 __buf1 = array.array('B', [0 for _ in range(buf_len)])
 
@@ -20,15 +22,18 @@ __buf1 = array.array('B', [0 for _ in range(buf_len)])
 #   __data[2] = index of current sample       [8]
 #   __data[3] = address of start of buffer 0  [12]
 #   __data[4] = address of start of buffer 1  [16]
-__data = array.array('I', [buf_len, 0, 0, addressof(__buf0), addressof(__buf1)] )
+__data = array.array('I', [buf_len, 0, 0, addressof(__buf0), addressof(__buf1)])
 
-# tracks current/last active buffer
 __active_buf = 0
+
+# return buffer
+def get_buffer(b):
+    return eval(f'__buf{b}')
 
 # placeholder for user provided buffer handler fn
 buffer_handler = None
 
-# sample PDM microphone using PIO
+# sample PDM microphone
 @rp2.asm_pio(set_init=rp2.PIO.OUT_LOW, out_init=rp2.PIO.IN_LOW, fifo_join=rp2.PIO.JOIN_RX)
 def sample() -> uint:
     set(y, 8)                   # no. of word length samples
@@ -56,7 +61,6 @@ def sample() -> uint:
     irq(rel(0))                 # raise irq - consume RX FIFO in main
 
 # count bits in 8 word sample and store into active buffer
-# (python variants take longer than the sampling period)
 #   r0 = __raw_sample_buf (8 word array)
 #   r1 = __data array
 @micropython.asm_thumb
@@ -130,34 +134,36 @@ def store_pcm_sample(r0, r1) -> uint:
 #   get samples and store in buffer
 #   p = irq (passed by StateMachine.irq)
 def irq_handler(p):
-    global __active_buf
+    global __raw_sample_buf, __data, __active_buf, buffer_handler
+
     sm.get(__raw_sample_buf)
+
     store_pcm_sample(__raw_sample_buf, __data)
-    # has active buffer switched?
+
     if __active_buf != __data[1]:
         if buffer_handler:
-            # handle (now) inactive buffer
+            # handle now inactive buffer
             micropython.schedule(buffer_handler, __active_buf)
         __active_buf = __data[1]
 
-# return buffer
-def get_buffer(b):
-    return eval(f'__buf{b}')
-
-# start StateMachine
+# init StateMachine
 #   pdm_clk = pdm clock pin (23 on arduino nano rp2040 connect)
 #   pdm_data = pdm data pin (22 on arduino nano rp2040 connect)
 #   handler = function to handle inactive buffer
-def start(pdm_clk, pdm_data, handler=None):
-    global buffer_handler, irq_handler, sm
+def init(pdm_clk, pdm_data, handler=None):
+    global buffer_handler, sample, irq_handler, sm, bit_sample_freq, __steps
 
     buffer_handler = handler
 
-    # init the statemachine
     sm = rp2.StateMachine(0, sample, freq=bit_sample_freq*__steps, set_base=pdm_clk, in_base=pdm_data)
 
-    # schedule interupt handler
     # hard interupt flag causes lockup?
     sm.irq(handler=irq_handler) #, hard=True)
 
+def start():
+    global sm
     sm.active(True)
+
+def stop():
+    global sm
+    sm.active(False)
