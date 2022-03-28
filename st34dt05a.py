@@ -43,6 +43,7 @@ def sample() -> uint:
     
     label("SAMPLE")
     set(pins, 1)            [2] # set clock pin high
+    wrap_target()
     in_(pins, 1)                # sample data pin into ISR 
                                 # (>105ns after rising clock edge)
     set(pins, 0)            [2] # set clock pin low
@@ -50,8 +51,6 @@ def sample() -> uint:
     
     # last bit sample 3 steps shorter accomodating
     # push, jmp and (re-)set x loop counter
-    # TODO: accomodate irq & set y loop counter 
-    #       (+2 instruction per 32 bit cycle) 
     set(pins, 1)            [2]
     in_(pins, 1)
     set(pins, 0)
@@ -59,6 +58,12 @@ def sample() -> uint:
 
     jmp(y_dec, "WORDSTART")
     irq(rel(0))                 # raise irq - consume RX FIFO in main
+
+    # reset counters and loop back, whilst maintaining timing
+    set(pins, 1)
+    set(y, 8)
+    set(x, 30)
+    # implicit wrap (no clock cycle)
 
 # count bits in 8 word sample and store into active buffer
 #   r0 = __raw_sample_buf (8 word array)
