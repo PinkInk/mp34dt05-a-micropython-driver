@@ -3,8 +3,7 @@ from wavsimple import wav
 from machine import Pin
 import st34dt05a as pdm
 
-pcm_rate = 8_000 # Hz
-# pcm_rate = 12_000 # Hz
+pcm_rate = 8_000 # Hz - default is 12kHz i.e. 3.072MHz bit-sample rate
 pdm.bit_sample_freq = pcm_rate * 256
 
 pdm_clk = Pin(23)
@@ -21,17 +20,10 @@ def buffer_handler(inactive_buf):
 pdm.init(pdm_clk, pdm_data, handler=buffer_handler)
 pdm.start()
 
-sleep(1) # init StateMachine
+sleep(1) # wait whilst StateMachine inits
 
-# record
-print('recording ... ', end='')
 record_flag = True
 sleep(10)
 record_flag = False
-print('finished')
 
-# sleep(2) # wait for soft interupt queue to clear?
-
-print('writing ... ', end='')
 w.close()
-print('finished')
